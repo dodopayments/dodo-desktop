@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
+  "productName": "Dodo Payments",
+  "version": "0.1.0",
+  "identifier": "com.dodopayments.desktop",
+  "build": {
+    "frontendDist": "https://app.dodopayments.com"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Dodo Payments",
+        "url": "https://app.dodopayments.com",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "targets": "all",
+    "category": "Finance",
+    "shortDescription": "Dodo Payments Desktop App",
+    "longDescription": "Desktop application for Dodo Payments - manage payments, subscriptions, and disputes.",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      }
+    }
+  }
+}
