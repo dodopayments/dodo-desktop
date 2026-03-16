@@ -9,11 +9,13 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, WebviewWindow,
 };
+use tauri_plugin_deep_link::DeepLinkExt;
 
 const DOCS_URL: &str = "https://docs.dodopayments.com";
 const SUPPORT_URL: &str = "https://dodopayments.com/support";
 const HOME_URL: &str = "https://app.dodopayments.com";
 const STATUS_URL: &str = "https://status.dodopayments.com";
+const AUTH_CALLBACK_URL: &str = "https://app.dodopayments.com/login/magic-link";
 const APP_HOST_PORT: &str = "app.dodopayments.com:443";
 const CONNECT_TIMEOUT_SECS: u64 = 3;
 const CONNECTIVITY_CHECK_INTERVAL_SECS: u64 = 10;
@@ -185,7 +187,31 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![retry_connection, open_status_page])
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
+            let dl_handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                let Some(window) = dl_handle.get_webview_window("main") else {
+                    return;
+                };
+                let _ = window.show();
+                let _ = window.set_focus();
+                if let Some(url) = event.urls().first() {
+                    let query = url.query().unwrap_or("");
+                    let callback = format!("{AUTH_CALLBACK_URL}?{query}");
+                    let _ = window.eval(&format!("window.location.replace('{callback}')"));
+                }
+            });
+
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
+            app.deep_link().register_all()?;
+
             // ── App menu bar ──────────────────────────────────────────
 
             // Only show a native menu bar on macOS.
