@@ -19,18 +19,18 @@ const CONNECT_TIMEOUT_SECS: u64 = 3;
 const CONNECTIVITY_CHECK_INTERVAL_SECS: u64 = 10;
 
 fn can_reach_app_host() -> bool {
-        let timeout = Duration::from_secs(CONNECT_TIMEOUT_SECS);
-        let Ok(addrs) = APP_HOST_PORT.to_socket_addrs() else {
-                return false;
-        };
+    let timeout = Duration::from_secs(CONNECT_TIMEOUT_SECS);
+    let Ok(addrs) = APP_HOST_PORT.to_socket_addrs() else {
+        return false;
+    };
 
-        addrs
-                .into_iter()
-                .any(|addr| TcpStream::connect_timeout(&addr, timeout).is_ok())
+    addrs
+        .into_iter()
+        .any(|addr| TcpStream::connect_timeout(&addr, timeout).is_ok())
 }
 
 fn load_home(window: &WebviewWindow) {
-        let _ = window.eval(&format!("window.location.replace('{HOME_URL}')"));
+    let _ = window.eval(&format!("window.location.replace('{HOME_URL}')"));
 }
 
 fn render_offline_page(window: &WebviewWindow) {
@@ -152,19 +152,19 @@ fn render_offline_page(window: &WebviewWindow) {
   </body>
 </html>"#;
 
-        if let Ok(html_json) = serde_json::to_string(offline_html) {
-                let _ = window.eval(&format!(
-                        "document.open();document.write({html_json});document.close();"
-                ));
-        }
+    if let Ok(html_json) = serde_json::to_string(offline_html) {
+        let _ = window.eval(&format!(
+            "document.open();document.write({html_json});document.close();"
+        ));
+    }
 }
 
 fn apply_connectivity_state(window: &WebviewWindow, is_online: bool) {
-        if is_online {
-                load_home(window);
-        } else {
-                render_offline_page(window);
-        }
+    if is_online {
+        load_home(window);
+    } else {
+        render_offline_page(window);
+    }
 }
 
 #[tauri::command]
