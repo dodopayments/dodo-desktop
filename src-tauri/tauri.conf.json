@@ -37,12 +37,18 @@
     ],
     "targets": "all",
     "category": "Finance",
+    "publisher": "Dodo Payments Inc.",
     "shortDescription": "Dodo Payments Desktop App",
     "longDescription": "Desktop application for Dodo Payments - manage payments, subscriptions, and disputes.",
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "10.15",
+      "entitlements": "./Entitlements.plist",
+      "infoPlist": "./Info.plist"
     },
     "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.comodoca.com",
       "webviewInstallMode": {
         "type": "embedBootstrapper",
         "silent": true
