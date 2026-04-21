@@ -7,22 +7,7 @@
     "frontendDist": "https://app.dodopayments.com"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "Dodo Payments",
-        "url": "https://app.dodopayments.com",
-        "width": 1400,
-        "height": 900,
-        "minWidth": 800,
-        "minHeight": 600,
-        "center": true,
-        "resizable": true,
-        "fullscreen": false,
-        "decorations": true,
-        "userAgent": "DodoDesktop"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": "default-src 'self' https://app.dodopayments.com; connect-src 'self' https://*.dodopayments.com https://dodopayments.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data: https:; frame-src https://app.dodopayments.com; object-src 'none'; base-uri 'none'"
     }

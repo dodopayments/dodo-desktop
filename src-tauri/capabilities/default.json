@@ -3,8 +3,13 @@
   "identifier": "default",
   "description": "Default capabilities for the Dodo Payments desktop app",
   "windows": ["main"],
+  "webviews": ["toolbar", "content"],
   "permissions": [
     "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
     "deep-link:default",
     "notification:default",
     "notification:allow-is-permission-granted",
