@@ -4,6 +4,8 @@
 <dict>
     <key>CFBundleName</key>
     <string>Dodo Payments</string>
+    <key>CFBundleDisplayName</key>
+    <string>Dodo Payments</string>
     <!-- App only uses HTTPS/TLS — standard network encryption, exempt from export compliance -->
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
