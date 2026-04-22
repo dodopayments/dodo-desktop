@@ -36,6 +36,53 @@ Pushing a `v*` tag triggers `build.yml`, which builds all platforms and creates 
 - Windows: `Dodo Payments_x.y.z_x64-setup.exe`, `Dodo Payments_x.y.z_x64_en-US.msi`
 - macOS: `Dodo Payments_x.y.z_aarch64.dmg`, `Dodo Payments_x.y.z_x64.dmg`
 - Linux: `dodo-payments_x.y.z_amd64.deb`, `dodo-payments_x.y.z_amd64.AppImage`
+- **Updater bundles** (when signing key is configured): `Dodo Payments.app.tar.gz`, `...setup.exe`, `...AppImage` + matching `.sig` files, plus a `latest.json` manifest
+
+> **Only publish releases as "latest"** once you've verified them. The installed app polls `https://github.com/dodopayments/dodo-desktop-app/releases/latest/download/latest.json` every 4 hours — marking a broken release as "latest" will auto-update all users to it. Use pre-release flags for anything not production-ready.
+
+---
+
+## Auto-Update
+
+Installed apps check for updates every 4 hours (and on startup). When a new version is detected:
+1. The updater downloads and stages the update silently in the background.
+2. A native notification informs the user that the update will apply on next restart.
+3. If the user doesn't restart within 24 hours, a native dialog prompts them to restart now.
+4. Users can manually check via `Dodo Payments → Check for Updates…` (macOS menu bar).
+
+**Scope**: GitHub Releases only. Users who install via Mac App Store or Microsoft Store receive updates through those stores' own mechanisms (Tauri's updater is not involved).
+
+**Not auto-updatable**: `.deb` packages (direct users to `.AppImage` for auto-update on Linux).
+
+### Updater Signing Keys (one-time setup)
+
+Tauri's updater requires its own signing keypair, distinct from OS code-signing certs. **If this key is lost, all existing installs become permanently un-updateable.**
+
+1. Generate a keypair locally:
+   ```bash
+   pnpm tauri signer generate -w ~/.tauri/dodo-payments.key
+   ```
+   You'll be prompted for a password — store it somewhere durable (e.g. 1Password).
+
+2. Back up `~/.tauri/dodo-payments.key` + password to 1Password. **No other copies.**
+
+3. Copy the public key into `src-tauri/tauri.conf.json` → `plugins.updater.pubkey` (replacing the `REPLACE_WITH_CONTENTS_OF_dodo-payments.key.pub` placeholder):
+   ```bash
+   cat ~/.tauri/dodo-payments.key.pub
+   ```
+
+4. Add GitHub secrets:
+
+   | Secret | Value |
+   |--------|-------|
+   | `TAURI_SIGNING_PRIVATE_KEY` | Full contents of `~/.tauri/dodo-payments.key` |
+   | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Password from step 1 |
+
+Once these are set, CI will auto-sign updater bundles and upload `latest.json` alongside release artifacts. Without them, CI still produces installers but skips updater artifacts (builds continue to succeed).
+
+### Key Rotation
+
+If the private key is compromised, full rotation is not possible without forcing affected users to reinstall manually. See `.sisyphus/plans/auto-update.md` → Appendix A for the transitional-version procedure.
 
 ---
 
@@ -173,7 +220,9 @@ xcrun altool --upload-app --type macos \
 - [ ] Bump version in `package.json`, `tauri.conf.json`, `Cargo.toml`
 - [ ] Test locally: app loads, tray, menus, offline page
 - [ ] `git tag v1.0.0 && git push origin main --tags`
-- [ ] CI completes → edit and publish the GitHub Release draft
+- [ ] CI completes → edit the GitHub Release draft
+- [ ] Verify `latest.json` is present in the draft's assets (indicates updater signing worked)
+- [ ] Publish — this makes the release visible to `/releases/latest/`, triggering auto-update for all existing installs. **Do not publish if the release is broken.**
 
 **Microsoft Store:**
 - [ ] Build with `tauri.microsoftstore.conf.json` → upload installer to a public URL
