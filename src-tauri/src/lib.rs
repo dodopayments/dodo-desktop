@@ -1,5 +1,8 @@
+mod updater;
+
 use std::{
     net::{TcpStream, ToSocketAddrs},
+    sync::Arc,
     thread,
     time::Duration,
 };
@@ -12,6 +15,9 @@ use tauri::{
     AppHandle, Manager, Webview, WebviewUrl,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
+use tokio::sync::Mutex as TokioMutex;
+
+use crate::updater::{check_manual, spawn_update_loop, SharedUpdateState, UpdateState};
 
 const DOCS_URL: &str = "https://docs.dodopayments.com";
 const SUPPORT_URL: &str = "https://dodopayments.com/support";
@@ -303,7 +309,19 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // ── Auto-updater ─────────────────────────────────────────
+
+            let update_state: SharedUpdateState =
+                Arc::new(TokioMutex::new(UpdateState::default()));
+            app.manage(update_state.clone());
+
+            #[cfg(desktop)]
+            spawn_update_loop(app.handle().clone(), update_state);
+
             // ── Window ───────────────────────────────────────────────
 
             let mut builder = WindowBuilder::new(app, "main")
@@ -384,6 +402,9 @@ pub fn run() {
 
                 let app_menu = SubmenuBuilder::new(app, "Dodo Payments")
                     .about(Some(about_meta))
+                    .item(&MenuItem::with_id(
+                        app, "check_for_updates", "Check for Updates…", true, None::<&str>,
+                    )?)
                     .separator()
                     .services()
                     .separator()
@@ -455,6 +476,17 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             app.on_menu_event(move |app_handle, event| {
+                if event.id().as_ref() == "check_for_updates" {
+                    if let Some(state) = app_handle.try_state::<SharedUpdateState>() {
+                        let app = app_handle.clone();
+                        let state = state.inner().clone();
+                        tauri::async_runtime::spawn(async move {
+                            check_manual(app, state).await;
+                        });
+                    }
+                    return;
+                }
+
                 let Some(wv) = app_handle.get_webview("content") else { return };
                 match event.id().as_ref() {
                     "go_home" => {

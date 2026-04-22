@@ -14,6 +14,9 @@ src-tauri/gen/
 *.swp
 *.swo
 
+# Local agent workspace (plans, scratch, etc.)
+.sisyphus/
+
 # OS
 .DS_Store
 Thumbs.db
