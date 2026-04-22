@@ -361,7 +361,7 @@ pub fn run() {
                 if let Some(url) = event.urls().first() {
                     if let Some(wv) = dl_handle.get_webview("content") {
                         let query = url.query().unwrap_or("");
-                        let callback = format!("{AUTH_CALLBACK_URL}?{query}");
+                        let callback = format!("{AUTH_CALLBACK_URL}?{query}&desktop_app=1");
                         let _ = wv.eval(&format!("window.location.replace('{callback}')"));
                     }
                 }
