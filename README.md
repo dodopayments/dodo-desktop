@@ -10,12 +10,12 @@
   <a href="https://github.com/dodopayments/dodo-desktop-app/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/dodopayments/dodo-desktop-app?color=green" alt="License" />
   </a>
-  <a href="https://github.com/dodopayments/dodo-desktop-app/stargazers">
-    <img src="https://img.shields.io/github/stars/dodopayments/dodo-desktop-app?style=social" alt="GitHub stars" />
+  <a href="https://discord.gg/bYqAp4ayYh">
+    <img src="https://img.shields.io/discord/1305511580854779984?label=Join%20Discord&logo=discord" alt="Join Discord" />
   </a>
 </p>
 
-Native desktop client for [Dodo Payments](https://dodopayments.com) — a thin, signed, auto-updating [Tauri 2.0](https://v2.tauri.app/) wrapper around [app.dodopayments.com](https://app.dodopayments.com) with a ~5 MB binary footprint.
+The official [Dodo Payments](https://dodopayments.com) desktop app for macOS, Windows, and Linux. Run your payments dashboard as a native app — signed, auto-updating, and only ~5 MB.
 
 ## Table of Contents
 
