@@ -13,21 +13,6 @@
   <a href="https://github.com/dodopayments/dodo-desktop-app/stargazers">
     <img src="https://img.shields.io/github/stars/dodopayments/dodo-desktop-app?style=social" alt="GitHub stars" />
   </a>
-  <a href="https://discord.gg/bYqAp4ayYh">
-    <img src="https://img.shields.io/discord/1305511580854779984?label=Join%20Discord&logo=discord" alt="Join Discord" />
-  </a>
-  <a href="https://twitter.com/dodopayments">
-    <img src="https://img.shields.io/twitter/follow/dodopayments?label=Follow&style=social" alt="Twitter Follow" />
-  </a>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/macOS-Apple%20Silicon%20%7C%20Intel-000?logo=apple" alt="macOS" />
-  <img src="https://img.shields.io/badge/Windows-x64-0078D4?logo=windows" alt="Windows" />
-  <img src="https://img.shields.io/badge/Linux-deb%20%7C%20AppImage%20%7C%20rpm-FCC624?logo=linux&logoColor=black" alt="Linux" />
-  <img src="https://img.shields.io/badge/Tauri-2.0-FFC131?logo=tauri" alt="Tauri 2.0" />
-  <img src="https://img.shields.io/badge/Rust-2021-000?logo=rust" alt="Rust" />
-  <img src="https://img.shields.io/badge/bundle-~5MB-success" alt="Bundle size" />
 </p>
 
 Native desktop client for [Dodo Payments](https://dodopayments.com) — a thin, signed, auto-updating [Tauri 2.0](https://v2.tauri.app/) wrapper around [app.dodopayments.com](https://app.dodopayments.com) with a ~5 MB binary footprint.
