@@ -2,7 +2,10 @@ mod updater;
 
 use std::{
     net::{TcpStream, ToSocketAddrs},
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     thread,
     time::Duration,
 };
@@ -15,9 +18,12 @@ use tauri::{
     AppHandle, Manager, Webview, WebviewUrl,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tokio::sync::Mutex as TokioMutex;
 
 use crate::updater::{check_manual, spawn_update_loop, SharedUpdateState, UpdateState};
+
+type SharedConnectivityState = Arc<AtomicBool>;
 
 const DOCS_URL: &str = "https://docs.dodopayments.com";
 const SUPPORT_URL: &str = "https://dodopayments.com/support";
@@ -25,6 +31,7 @@ const HOME_URL: &str = "https://app.dodopayments.com";
 const STATUS_URL: &str = "https://status.dodopayments.com";
 const AUTH_CALLBACK_URL: &str = "https://app.dodopayments.com/login/magic-link";
 const APP_HOST_PORT: &str = "app.dodopayments.com:443";
+const BLANK_PAGE_URL: &str = "about:blank";
 const CONNECT_TIMEOUT_SECS: u64 = 3;
 const CONNECTIVITY_CHECK_INTERVAL_SECS: u64 = 10;
 
@@ -248,11 +255,26 @@ fn render_offline_page<R: tauri::Runtime>(webview: &Webview<R>) {
     }
 }
 
+fn show_no_internet_popup<R: tauri::Runtime>(app: &AppHandle<R>) {
+    app.dialog()
+        .message("No internet connection detected. Check your connection and retry to load Dodo Payments.")
+        .title("No internet connection")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::Ok)
+        .show(|_| {});
+}
+
 fn apply_connectivity_state<R: tauri::Runtime>(webview: &Webview<R>, is_online: bool) {
     if is_online {
         load_home(webview);
     } else {
         render_offline_page(webview);
+    }
+}
+
+fn store_connectivity_state<R: tauri::Runtime>(app: &AppHandle<R>, is_online: bool) {
+    if let Some(state) = app.try_state::<SharedConnectivityState>() {
+        state.store(is_online, Ordering::Relaxed);
     }
 }
 
@@ -272,8 +294,11 @@ fn go_forward(app: AppHandle) {
 
 #[tauri::command]
 fn retry_connection(app: AppHandle) {
+    let is_online = can_reach_app_host();
+    store_connectivity_state(&app, is_online);
+
     if let Some(wv) = app.get_webview("content") {
-        if can_reach_app_host() {
+        if is_online {
             load_home(&wv);
         } else {
             render_offline_page(&wv);
@@ -362,11 +387,25 @@ pub fn run() {
 
             // Content webview — the remote Dodo Payments app
             window.add_child(
-                WebviewBuilder::new("content", WebviewUrl::External(HOME_URL.parse()?))
+                WebviewBuilder::new("content", WebviewUrl::External(BLANK_PAGE_URL.parse()?))
                     .user_agent("DodoDesktop"),
                 tauri::LogicalPosition::new(0.0, TOOLBAR_HEIGHT),
                 tauri::LogicalSize::new(size.width, size.height - TOOLBAR_HEIGHT),
             )?;
+
+            let is_online_on_startup = can_reach_app_host();
+
+            if let Some(wv) = app.get_webview("content") {
+                apply_connectivity_state(&wv, is_online_on_startup);
+            }
+
+            let connectivity_state: SharedConnectivityState =
+                Arc::new(AtomicBool::new(is_online_on_startup));
+            app.manage(connectivity_state.clone());
+
+            if !is_online_on_startup {
+                show_no_internet_popup(&app.handle());
+            }
 
             // ── Deep link ─────────────────────────────────────────────
 
@@ -559,18 +598,16 @@ pub fn run() {
 
             let app_handle = app.handle().clone();
             thread::spawn(move || {
-                let mut was_online = can_reach_app_host();
-                if let Some(wv) = app_handle.get_webview("content") {
-                    apply_connectivity_state(&wv, was_online);
-                }
+                let connectivity_state = connectivity_state.clone();
                 loop {
                     thread::sleep(Duration::from_secs(CONNECTIVITY_CHECK_INTERVAL_SECS));
+                    let was_online = connectivity_state.load(Ordering::Relaxed);
                     let is_online = can_reach_app_host();
                     if is_online != was_online {
                         if let Some(wv) = app_handle.get_webview("content") {
                             apply_connectivity_state(&wv, is_online);
                         }
-                        was_online = is_online;
+                        connectivity_state.store(is_online, Ordering::Relaxed);
                     }
                 }
             });
