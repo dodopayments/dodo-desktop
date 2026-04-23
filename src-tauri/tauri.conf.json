@@ -49,9 +49,9 @@
       "infoPlist": "./Info.plist"
     },
     "windows": {
-      "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
-      "timestampUrl": "http://timestamp.comodoca.com",
+      "timestampUrl": "http://timestamp.acs.microsoft.com",
+      "signCommand": "trusted-signing-cli -e https://eus.codesigning.azure.net -a dodopayments -c dodo-public-trust %1",
       "webviewInstallMode": {
         "type": "embedBootstrapper",
         "silent": true
