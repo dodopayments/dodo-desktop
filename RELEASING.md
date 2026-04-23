@@ -116,23 +116,58 @@ Requires an [Apple Developer Program](https://developer.apple.com/programs) memb
 
 ### Windows
 
-Requires an OV (Organization Validated) code signing certificate from a CA (DigiCert, Sectigo, etc.).
+Uses [**Azure Artifact Signing**](https://learn.microsoft.com/en-us/azure/trusted-signing/) (formerly Trusted Signing) — Microsoft's managed code signing service. No `.pfx` file, no physical HSM, no certificate renewal. Signing keys live in Azure; CI authenticates via OIDC (no long-lived secrets in GitHub).
 
-1. Convert your certificate to `.pfx` and encode it:
-   ```powershell
-   certutil -encode certificate.pfx base64cert.txt
+#### One-time Azure setup
+
+1. **Identity validation** — request via [Azure Portal → Trusted Signing → Identity validations](https://portal.azure.com). Takes ~3 business days. One validation is reusable across all accounts in the subscription.
+2. **Register the resource provider**:
+   ```bash
+   az provider register --namespace Microsoft.CodeSigning
    ```
-2. Open `certmgr.msc` → Personal → Certificates → find your cert → Details → copy the **Thumbprint**.
-3. Set `certificateThumbprint` in `src-tauri/tauri.conf.json` → `bundle.windows`.
+3. **Create a Trusted Signing Account** in East US (endpoint: `https://eus.codesigning.azure.net`).
+4. **Create a Certificate Profile** of type `PublicTrust` on that account. Note the exact names of the account and profile.
+5. **Plug the names into `src-tauri/tauri.conf.json`** → `bundle.windows.signCommand` (replace `<ARTIFACT_SIGNING_ACCOUNT_NAME>` and `<CERTIFICATE_PROFILE_NAME>`).
 
-**GitHub secrets required:**
+#### CI authentication (OIDC, no secrets)
 
-| Secret | Value |
+1. Create a Microsoft Entra **App Registration** (Azure Portal → Microsoft Entra ID → App registrations → New).
+2. On that app, add a **Federated Credential** scoped to this repo:
+   - Issuer: `https://token.actions.githubusercontent.com`
+   - Subject: `repo:dodopayments/dodo-desktop:ref:refs/heads/main` — and add another for `repo:dodopayments/dodo-desktop:ref:refs/tags/v*` so tag-triggered builds authenticate.
+   - Audience: `api://AzureADTokenExchange`
+3. **Assign RBAC** (critical — Owner/Contributor alone is *not* enough):
+   ```bash
+   az role assignment create \
+     --assignee <app-client-id> \
+     --role "Trusted Signing Certificate Profile Signer" \
+     --scope "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.CodeSigning/codeSigningAccounts/<account-name>"
+   ```
+   > Azure Portal may show this role as **"Artifact Signing Certificate Profile Signer"** — same role, renamed.
+
+#### GitHub repository variables (not secrets — these are not sensitive)
+
+Set under **Settings → Secrets and variables → Actions → Variables**:
+
+| Variable | Value |
 |--------|-------|
-| `WINDOWS_CERTIFICATE` | Base64-encoded `.pfx` |
-| `WINDOWS_CERTIFICATE_PASSWORD` | Password for the `.pfx` |
+| `AZURE_CLIENT_ID` | App registration's Application (client) ID |
+| `AZURE_TENANT_ID` | Microsoft Entra tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Subscription ID holding the signing account |
+
+CI auto-skips signing when `AZURE_CLIENT_ID` is unset — the Windows build still succeeds, just unsigned (useful for forks and PR builds).
+
+#### Verifying a signed build
+
+```powershell
+signtool verify /v /pa ".\Dodo Payments_x.y.z_x64-setup.exe"
+```
+
+Should show the Microsoft ID Verified CS EOC CA chain and "Successfully verified".
 
 > `TAURI_SIGNING_PRIVATE_KEY` is for the **updater plugin** only — not code signing.
+>
+> SmartScreen reputation is **not instant** with Artifact Signing (unlike old EV certs). The first few thousand downloads will still trigger SmartScreen warnings; reputation accrues automatically over time.
 
 ---
 
