@@ -1,14 +1,14 @@
 # Dodo Payments Desktop
 
-<p align="center">
-  <a href="https://github.com/dodopayments/dodo-desktop-app/releases/latest">
-    <img src="https://img.shields.io/github/v/release/dodopayments/dodo-desktop-app?label=release&color=blue" alt="Latest release" />
+<p align="left">
+  <a href="https://github.com/dodopayments/dodo-desktop/releases/latest">
+    <img src="https://img.shields.io/github/v/release/dodopayments/dodo-desktop?label=release&color=blue" alt="Latest release" />
   </a>
-  <a href="https://github.com/dodopayments/dodo-desktop-app/actions/workflows/build.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/dodopayments/dodo-desktop-app/build.yml?label=build" alt="Build status" />
+  <a href="https://github.com/dodopayments/dodo-desktop/actions/workflows/build.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/dodopayments/dodo-desktop/build.yml?label=build" alt="Build status" />
   </a>
-  <a href="https://github.com/dodopayments/dodo-desktop-app/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/dodopayments/dodo-desktop-app?color=green" alt="License" />
+  <a href="https://github.com/dodopayments/dodo-desktop/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/dodopayments/dodo-desktop?color=green" alt="License" />
   </a>
   <a href="https://discord.gg/bYqAp4ayYh">
     <img src="https://img.shields.io/discord/1305511580854779984?label=Join%20Discord&logo=discord" alt="Join Discord" />
@@ -35,7 +35,7 @@ The official [Dodo Payments](https://dodopayments.com) desktop app for macOS, Wi
 
 ## Download
 
-Grab the latest installer for your platform from the [Releases page](https://github.com/dodopayments/dodo-desktop-app/releases/latest):
+Grab the latest installer for your platform from the [Releases page](https://github.com/dodopayments/dodo-desktop/releases/latest):
 
 | Platform | File |
 |---|---|
@@ -108,7 +108,7 @@ pnpm icons
 
 ## Auto-Update
 
-Installed apps poll `https://github.com/dodopayments/dodo-desktop-app/releases/latest/download/latest.json` every 4 hours (and on startup). When a new version is detected:
+Installed apps poll `https://github.com/dodopayments/dodo-desktop/releases/latest/download/latest.json` every 4 hours (and on startup). When a new version is detected:
 
 1. The update is downloaded and staged silently in the background.
 2. A native notification informs the user that the update will apply on next restart.
@@ -157,11 +157,11 @@ Pushing a `v*` tag triggers [`.github/workflows/build.yml`](.github/workflows/bu
 
 Pull requests are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, coding guidelines, and submission process.
 
-For bugs and feature requests, use the [issue templates](https://github.com/dodopayments/dodo-desktop-app/issues/new/choose).
+For bugs and feature requests, use the [issue templates](https://github.com/dodopayments/dodo-desktop/issues/new/choose).
 
 ## Security
 
-Report vulnerabilities privately via [GitHub Security Advisories](https://github.com/dodopayments/dodo-desktop-app/security/advisories/new). See [SECURITY.md](.github/SECURITY.md) for the full policy, SLAs, and safe-harbor terms.
+Report vulnerabilities privately via [GitHub Security Advisories](https://github.com/dodopayments/dodo-desktop/security/advisories/new). See [SECURITY.md](.github/SECURITY.md) for the full policy, SLAs, and safe-harbor terms.
 
 ## License
 

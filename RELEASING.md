@@ -40,7 +40,7 @@ Pushing a `v*` tag triggers `build.yml`, which builds all platforms and creates 
 - Linux: `dodo-payments_x.y.z_amd64.deb`, `dodo-payments_x.y.z_amd64.AppImage`
 - **Updater bundles** (when signing key is configured): `Dodo Payments.app.tar.gz`, `...setup.exe`, `...AppImage` + matching `.sig` files, plus a `latest.json` manifest
 
-> **Only publish releases as "latest"** once you've verified them. The installed app polls `https://github.com/dodopayments/dodo-desktop-app/releases/latest/download/latest.json` every 4 hours — marking a broken release as "latest" will auto-update all users to it. Use pre-release flags for anything not production-ready.
+> **Only publish releases as "latest"** once you've verified them. The installed app polls `https://github.com/dodopayments/dodo-desktop/releases/latest/download/latest.json` every 4 hours — marking a broken release as "latest" will auto-update all users to it. Use pre-release flags for anything not production-ready.
 
 ---
 

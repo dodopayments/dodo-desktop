@@ -6,7 +6,7 @@ We take the security of our users and their data seriously. Thank you for respon
 
 Please report security issues through GitHub's private advisory workflow:
 
-- Open a private report: https://github.com/dodopayments/dodo-desktop-app/security/advisories/new
+- Open a private report: https://github.com/dodopayments/dodo-desktop/security/advisories/new
 
 Do not create a public issue for security reports. Using the private advisory keeps details confidential until a fix is available.
 
