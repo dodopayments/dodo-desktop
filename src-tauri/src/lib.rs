@@ -193,6 +193,16 @@ fn load_home<R: tauri::Runtime>(webview: &Webview<R>) {
     let _ = webview.eval(&format!("window.location.replace('{HOME_URL}')"));
 }
 
+fn reload_or_home<R: tauri::Runtime>(webview: &Webview<R>) {
+    let _ = webview.eval(&format!(
+        "if (window.location.href.startsWith('{HOME_URL}')) \
+            {{ window.location.reload(); }} \
+         else \
+            {{ window.location.replace('{HOME_URL}'); }}"
+    ));
+}
+
+
 fn render_offline_page<R: tauri::Runtime>(webview: &Webview<R>) {
     let offline_html = r#"<!doctype html>
 <html lang="en">
@@ -272,6 +282,7 @@ fn apply_connectivity_state<R: tauri::Runtime>(webview: &Webview<R>, is_online: 
     }
 }
 
+
 fn store_connectivity_state<R: tauri::Runtime>(app: &AppHandle<R>, is_online: bool) {
     if let Some(state) = app.try_state::<SharedConnectivityState>() {
         state.store(is_online, Ordering::Relaxed);
@@ -299,7 +310,7 @@ fn retry_connection(app: AppHandle) {
 
     if let Some(wv) = app.get_webview("content") {
         if is_online {
-            load_home(&wv);
+            reload_or_home(&wv);
         } else {
             render_offline_page(&wv);
         }
@@ -605,7 +616,11 @@ pub fn run() {
                     let is_online = can_reach_app_host();
                     if is_online != was_online {
                         if let Some(wv) = app_handle.get_webview("content") {
-                            apply_connectivity_state(&wv, is_online);
+                            if is_online {
+                                reload_or_home(&wv);
+                            } else {
+                                render_offline_page(&wv);
+                            }
                         }
                         connectivity_state.store(is_online, Ordering::Relaxed);
                     }
