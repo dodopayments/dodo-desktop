@@ -1,6 +1,6 @@
 [package]
 name = "dodo-payments"
-version = "0.1.4"
+version = "0.1.5"
 description = "Dodo Payments Desktop App"
 authors = ["Dodo Payments"]
 license = "GPL-3.0-or-later"
