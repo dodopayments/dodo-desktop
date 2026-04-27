@@ -790,6 +790,7 @@ dependencies = [
 name = "dodo-payments"
 version = "0.1.5"
 dependencies = [
+ "gtk",
  "open",
  "serde_json",
  "tauri",
