@@ -27,3 +27,8 @@ tauri-plugin-process = "2"
 tauri-plugin-dialog = "2"
 tokio = { version = "1", features = ["time", "sync"] }
 open = "5"
+
+# Native GTK widgets for the Linux titlebar (back/forward buttons).
+# Pinned to 0.18 to match the gtk-rs version used by tauri-runtime-wry.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"

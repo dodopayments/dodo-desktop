@@ -47,7 +47,9 @@ const CONNECT_TIMEOUT_SECS: u64 = 3;
 const CONNECTIVITY_CHECK_INTERVAL_SECS: u64 = 10;
 
 // macOS: toolbar sits in the native titlebar row (28px), offset past traffic lights.
-// Windows/Linux: toolbar replaces the native titlebar entirely (36px), starts at x=0.
+// Windows: toolbar replaces the native titlebar entirely (36px), starts at x=0.
+// Linux: no toolbar webview is added (see CONTENT_TOP_OFFSET), so this constant
+// is unused at runtime on Linux but kept for shared compilation paths.
 #[cfg(target_os = "macos")]
 const TOOLBAR_HEIGHT: f64 = 28.0;
 #[cfg(not(target_os = "macos"))]
@@ -59,6 +61,15 @@ const TOOLBAR_HEIGHT: f64 = 36.0;
 const TOOLBAR_OFFSET_X: f64 = 76.0;
 #[cfg(not(target_os = "macos"))]
 const TOOLBAR_OFFSET_X: f64 = 0.0;
+
+// Vertical offset for the content webview. On macOS/Windows the toolbar
+// webview occupies the top strip. On Linux we don't add a toolbar webview
+// (wry's child-webview placement is X11-only and breaks on Wayland), so
+// the content fills the entire client area below the native titlebar.
+#[cfg(not(target_os = "linux"))]
+const CONTENT_TOP_OFFSET: f64 = TOOLBAR_HEIGHT;
+#[cfg(target_os = "linux")]
+const CONTENT_TOP_OFFSET: f64 = 0.0;
 
 // Served via the "dodo" custom URI scheme at dodo://toolbar.
 // Platform is detected via navigator.platform so one file handles both.
@@ -418,10 +429,18 @@ pub fn run() {
                     .hidden_title(true);
             }
 
-            // Windows / Linux: remove native chrome entirely
-            #[cfg(not(target_os = "macos"))]
+            // Windows: remove native chrome entirely (custom toolbar webview replaces it)
+            #[cfg(target_os = "windows")]
             {
                 builder = builder.decorations(false);
+            }
+            // Linux: defer showing the window until after we install the
+            // GtkHeaderBar as titlebar. Calling set_titlebar() on an
+            // already-visible window leaves drag-to-move and
+            // double-click-to-maximize unattached.
+            #[cfg(target_os = "linux")]
+            {
+                builder = builder.visible(false);
             }
 
             let window = builder.build()?;
@@ -429,8 +448,11 @@ pub fn run() {
             let scale = window.scale_factor()?;
             let size = window.inner_size()?.to_logical::<f64>(scale);
 
-            // Toolbar webview — local HTML, serves back/forward icons
-            // and (on Win/Linux) min/max/close buttons
+            // Toolbar webview — local HTML, serves back/forward icons.
+            // macOS: overlays the native titlebar (with traffic lights).
+            // Windows: replaces the removed native titlebar (back/fwd + min/max/close).
+            // Linux: skipped — wry child-webview placement is broken on Wayland.
+            #[cfg(not(target_os = "linux"))]
             window.add_child(
                 WebviewBuilder::new(
                     "toolbar",
@@ -439,6 +461,102 @@ pub fn run() {
                 tauri::LogicalPosition::new(TOOLBAR_OFFSET_X, 0.0),
                 tauri::LogicalSize::new(size.width - TOOLBAR_OFFSET_X, TOOLBAR_HEIGHT),
             )?;
+
+            // Linux: install a GtkHeaderBar as the window titlebar with native
+            // back/forward buttons. set_titlebar() switches GTK to CSD mode and
+            // suppresses the WM-drawn titlebar, giving us visual parity with
+            // the in-app toolbar used on macOS/Windows without the unsupported
+            // multi-webview placement.
+            #[cfg(target_os = "linux")]
+            {
+                use gtk::prelude::*;
+
+                let gtk_window = window.gtk_window()?;
+
+                let header = gtk::HeaderBar::new();
+                header.set_show_close_button(true);
+
+                let back_btn = gtk::Button::from_icon_name(
+                    Some("go-previous-symbolic"),
+                    gtk::IconSize::Menu,
+                );
+                back_btn.set_tooltip_text(Some("Back"));
+
+                let forward_btn = gtk::Button::from_icon_name(
+                    Some("go-next-symbolic"),
+                    gtk::IconSize::Menu,
+                );
+                forward_btn.set_tooltip_text(Some("Forward"));
+
+                let app_handle = app.handle().clone();
+                back_btn.connect_clicked(move |_| {
+                    if let Some(wv) = app_handle.get_webview("content") {
+                        let _ = wv.eval("window.history.back()");
+                    }
+                });
+
+                let app_handle = app.handle().clone();
+                forward_btn.connect_clicked(move |_| {
+                    if let Some(wv) = app_handle.get_webview("content") {
+                        let _ = wv.eval("window.history.forward()");
+                    }
+                });
+
+                header.pack_start(&back_btn);
+                header.pack_start(&forward_btn);
+
+                // Drag/maximize handler. GtkHeaderBar is a no-window widget; in
+                // Tauri/wry's GTK setup, button-press signals and gesture
+                // controllers attached to it never fire (events do reach the
+                // toplevel — verified — but never dispatch into the headerbar's
+                // controllers). The workaround is a GtkEventBox installed as the
+                // headerbar's custom title widget. EventBox creates its own
+                // GdkWindow, so events on its area dispatch directly to its
+                // signal handlers, bypassing the broken no-window chain.
+                // hexpand makes the EventBox fill the empty space between
+                // pack_start and pack_end children, so the drag region covers
+                // the whole non-button area.
+                let title_eb = gtk::EventBox::new();
+                title_eb.add_events(gtk::gdk::EventMask::BUTTON_PRESS_MASK);
+                title_eb.set_hexpand(true);
+                let title_label = gtk::Label::new(Some("Dodo Payments"));
+                title_eb.add(&title_label);
+
+                let gtk_window_for_drag = gtk_window.clone();
+                title_eb.connect_button_press_event(move |_, event| {
+                    use gtk::glib::Propagation;
+                    if event.button() != 1 {
+                        return Propagation::Proceed;
+                    }
+                    match event.event_type() {
+                        gtk::gdk::EventType::DoubleButtonPress => {
+                            if gtk_window_for_drag.is_maximized() {
+                                gtk_window_for_drag.unmaximize();
+                            } else {
+                                gtk_window_for_drag.maximize();
+                            }
+                            Propagation::Stop
+                        }
+                        gtk::gdk::EventType::ButtonPress => {
+                            let (x, y) = event.root();
+                            gtk_window_for_drag.begin_move_drag(
+                                event.button() as i32,
+                                x as i32,
+                                y as i32,
+                                event.time(),
+                            );
+                            Propagation::Stop
+                        }
+                        _ => Propagation::Proceed,
+                    }
+                });
+
+                header.set_custom_title(Some(&title_eb));
+                header.show_all();
+                gtk_window.set_titlebar(Some(&header));
+
+                window.show()?;
+            }
 
             // Pre-flight the network check so the content webview can be constructed
             // with its real initial URL — going through `about:blank` and then eval'ing
@@ -458,8 +576,8 @@ pub fn run() {
                     WebviewUrl::External(initial_content_url.parse()?),
                 )
                 .user_agent("DodoDesktop"),
-                tauri::LogicalPosition::new(0.0, TOOLBAR_HEIGHT),
-                tauri::LogicalSize::new(size.width, size.height - TOOLBAR_HEIGHT),
+                tauri::LogicalPosition::new(0.0, CONTENT_TOP_OFFSET),
+                tauri::LogicalSize::new(size.width, size.height - CONTENT_TOP_OFFSET),
             )?;
 
             let connectivity_state: SharedConnectivityState =
@@ -695,10 +813,10 @@ pub fn run() {
                         ));
                     }
                     if let Some(cv) = window.get_webview("content") {
-                        let _ = cv.set_position(tauri::LogicalPosition::new(0.0, TOOLBAR_HEIGHT));
+                        let _ = cv.set_position(tauri::LogicalPosition::new(0.0, CONTENT_TOP_OFFSET));
                         let _ = cv.set_size(tauri::LogicalSize::new(
                             size.width,
-                            (size.height - TOOLBAR_HEIGHT).max(0.0),
+                            (size.height - CONTENT_TOP_OFFSET).max(0.0),
                         ));
                     }
                 }
