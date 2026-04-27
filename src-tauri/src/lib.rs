@@ -15,7 +15,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::WebviewBuilder,
     window::WindowBuilder,
-    AppHandle, Manager, Webview, WebviewUrl,
+    ActivationPolicy, AppHandle, Manager, Webview, WebviewUrl,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
@@ -278,7 +278,11 @@ fn show_no_internet_popup<R: tauri::Runtime>(app: &AppHandle<R>) {
 fn current_remote_url<R: tauri::Runtime>(webview: &Webview<R>) -> Option<String> {
     let url = webview.url().ok()?;
     let s = url.as_str();
-    if s.starts_with(HOME_URL) { Some(s.to_owned()) } else { None }
+    if s.starts_with(HOME_URL) {
+        Some(s.to_owned())
+    } else {
+        None
+    }
 }
 
 // Snapshot the webview's remote URL (if any) so a later reconnect can restore it.
@@ -318,6 +322,13 @@ fn reload_or_home<R: tauri::Runtime>(app: &AppHandle<R>, webview: &Webview<R>) {
 fn store_connectivity_state<R: tauri::Runtime>(app: &AppHandle<R>, is_online: bool) {
     if let Some(state) = app.try_state::<SharedConnectivityState>() {
         state.store(is_online, Ordering::Relaxed);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn set_activation_policy<R: tauri::Runtime>(app: &AppHandle<R>, policy: ActivationPolicy) {
+    if let Err(err) = app.set_activation_policy(policy) {
+        eprintln!("Failed to set activation policy: {err}");
     }
 }
 
@@ -639,6 +650,9 @@ pub fn run() {
                         if let Some(window) = app_handle.get_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
+
+                            #[cfg(target_os = "macos")]
+                            set_activation_policy(app_handle, ActivationPolicy::Regular);
                         }
                     }
                     _ => {}
@@ -709,6 +723,9 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let _ = window.hide();
                 api.prevent_close();
+                
+                #[cfg(target_os = "macos")]
+                set_activation_policy(window.app_handle(), ActivationPolicy::Accessory);
             }
         })
         .run(tauri::generate_context!())
