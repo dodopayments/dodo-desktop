@@ -325,12 +325,20 @@ pub fn run() {
             open_status_page
         ])
         // Serve local HTML pages via the dodo:// custom scheme.
-        // The host portion of the URL (e.g. `dodo://toolbar`, `dodo://offline`) selects
-        // which page is returned. Tauri rewrites this to `dodo://localhost/<host>` on
-        // macOS/Linux and `http://dodo.localhost/<host>` on Windows, so we match on the
-        // path's first segment, which is consistent across platforms.
+        //
+        // Routing key by platform (Tauri rewrites the URL the handler sees):
+        //   * macOS / Linux:        `dodo://offline`              -> uri.host() == "offline"
+        //   * Windows / Android:    `http://dodo.localhost/offline` -> uri.path()  == "/offline"
+        // We accept either form by checking host first, then falling back to the path.
         .register_uri_scheme_protocol("dodo", |_app, req| {
-            let body = match req.uri().path().trim_start_matches('/') {
+            let uri = req.uri();
+            let key = uri
+                .host()
+                .filter(|h| *h != "localhost" && *h != "dodo.localhost")
+                .map(str::to_owned)
+                .unwrap_or_else(|| uri.path().trim_start_matches('/').to_owned());
+
+            let body = match key.as_str() {
                 "offline" => OFFLINE_HTML.as_bytes().to_vec(),
                 _ => TOOLBAR_HTML.as_bytes().to_vec(),
             };
