@@ -31,7 +31,12 @@ const HOME_URL: &str = "https://app.dodopayments.com";
 const STATUS_URL: &str = "https://status.dodopayments.com";
 const AUTH_CALLBACK_URL: &str = "https://app.dodopayments.com/login/magic-link";
 const APP_HOST_PORT: &str = "app.dodopayments.com:443";
-const BLANK_PAGE_URL: &str = "about:blank";
+// Local offline page served via the `dodo://` custom URI scheme.
+// Using a real URL (instead of about:blank + eval) avoids a macOS WKWebView race
+// where eval calls queued before the first navigation commit can be lost,
+// leaving the content webview stuck on a blank screen at startup.
+const OFFLINE_PAGE_URL: &str = "dodo://offline";
+const TOOLBAR_PAGE_URL: &str = "dodo://toolbar";
 const CONNECT_TIMEOUT_SECS: u64 = 3;
 const CONNECTIVITY_CHECK_INTERVAL_SECS: u64 = 10;
 
@@ -189,22 +194,8 @@ fn can_reach_app_host() -> bool {
         .any(|addr| TcpStream::connect_timeout(&addr, timeout).is_ok())
 }
 
-fn load_home<R: tauri::Runtime>(webview: &Webview<R>) {
-    let _ = webview.eval(&format!("window.location.replace('{HOME_URL}')"));
-}
-
-fn reload_or_home<R: tauri::Runtime>(webview: &Webview<R>) {
-    let _ = webview.eval(&format!(
-        "if (window.location.href.startsWith('{HOME_URL}')) \
-            {{ window.location.reload(); }} \
-         else \
-            {{ window.location.replace('{HOME_URL}'); }}"
-    ));
-}
-
-
-fn render_offline_page<R: tauri::Runtime>(webview: &Webview<R>) {
-    let offline_html = r#"<!doctype html>
+// Served via the "dodo" custom URI scheme at dodo://offline.
+const OFFLINE_HTML: &str = r#"<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -258,10 +249,9 @@ fn render_offline_page<R: tauri::Runtime>(webview: &Webview<R>) {
   </body>
 </html>"#;
 
-    if let Ok(html_json) = serde_json::to_string(offline_html) {
-        let _ = webview.eval(&format!(
-            "document.open();document.write({html_json});document.close();"
-        ));
+fn navigate_to<R: tauri::Runtime>(webview: &Webview<R>, url: &str) {
+    if let Ok(parsed) = url.parse() {
+        let _ = webview.navigate(parsed);
     }
 }
 
@@ -274,14 +264,18 @@ fn show_no_internet_popup<R: tauri::Runtime>(app: &AppHandle<R>) {
         .show(|_| {});
 }
 
-fn apply_connectivity_state<R: tauri::Runtime>(webview: &Webview<R>, is_online: bool) {
-    if is_online {
-        load_home(webview);
+fn reload_or_home<R: tauri::Runtime>(webview: &Webview<R>) {
+    let on_home_url = webview
+        .url()
+        .map(|u| u.as_str().starts_with(HOME_URL))
+        .unwrap_or(false);
+
+    if on_home_url {
+        let _ = webview.reload();
     } else {
-        render_offline_page(webview);
+        navigate_to(webview, HOME_URL);
     }
 }
-
 
 fn store_connectivity_state<R: tauri::Runtime>(app: &AppHandle<R>, is_online: bool) {
     if let Some(state) = app.try_state::<SharedConnectivityState>() {
@@ -312,7 +306,7 @@ fn retry_connection(app: AppHandle) {
         if is_online {
             reload_or_home(&wv);
         } else {
-            render_offline_page(&wv);
+            navigate_to(&wv, OFFLINE_PAGE_URL);
         }
     }
 }
@@ -330,11 +324,19 @@ pub fn run() {
             retry_connection,
             open_status_page
         ])
-        // Serve toolbar HTML via dodo:// custom scheme
-        .register_uri_scheme_protocol("dodo", |_app, _req| {
+        // Serve local HTML pages via the dodo:// custom scheme.
+        // The host portion of the URL (e.g. `dodo://toolbar`, `dodo://offline`) selects
+        // which page is returned. Tauri rewrites this to `dodo://localhost/<host>` on
+        // macOS/Linux and `http://dodo.localhost/<host>` on Windows, so we match on the
+        // path's first segment, which is consistent across platforms.
+        .register_uri_scheme_protocol("dodo", |_app, req| {
+            let body = match req.uri().path().trim_start_matches('/') {
+                "offline" => OFFLINE_HTML.as_bytes().to_vec(),
+                _ => TOOLBAR_HTML.as_bytes().to_vec(),
+            };
             tauri::http::Response::builder()
-                .header("Content-Type", "text/html")
-                .body(TOOLBAR_HTML.as_bytes().to_vec())
+                .header("Content-Type", "text/html; charset=utf-8")
+                .body(body)
                 .unwrap()
         })
         .plugin(tauri_plugin_notification::init())
@@ -390,25 +392,33 @@ pub fn run() {
             window.add_child(
                 WebviewBuilder::new(
                     "toolbar",
-                    WebviewUrl::External("dodo://toolbar".parse()?),
+                    WebviewUrl::External(TOOLBAR_PAGE_URL.parse()?),
                 ),
                 tauri::LogicalPosition::new(TOOLBAR_OFFSET_X, 0.0),
                 tauri::LogicalSize::new(size.width - TOOLBAR_OFFSET_X, TOOLBAR_HEIGHT),
             )?;
 
-            // Content webview — the remote Dodo Payments app
+            // Pre-flight the network check so the content webview can be constructed
+            // with its real initial URL — going through `about:blank` and then eval'ing
+            // `window.location.replace(...)` is racy on macOS WKWebView and can leave
+            // the webview stuck on a blank screen.
+            let is_online_on_startup = can_reach_app_host();
+            let initial_content_url = if is_online_on_startup {
+                HOME_URL
+            } else {
+                OFFLINE_PAGE_URL
+            };
+
+            // Content webview — the remote Dodo Payments app (or local offline page).
             window.add_child(
-                WebviewBuilder::new("content", WebviewUrl::External(BLANK_PAGE_URL.parse()?))
-                    .user_agent("DodoDesktop"),
+                WebviewBuilder::new(
+                    "content",
+                    WebviewUrl::External(initial_content_url.parse()?),
+                )
+                .user_agent("DodoDesktop"),
                 tauri::LogicalPosition::new(0.0, TOOLBAR_HEIGHT),
                 tauri::LogicalSize::new(size.width, size.height - TOOLBAR_HEIGHT),
             )?;
-
-            let is_online_on_startup = can_reach_app_host();
-
-            if let Some(wv) = app.get_webview("content") {
-                apply_connectivity_state(&wv, is_online_on_startup);
-            }
 
             let connectivity_state: SharedConnectivityState =
                 Arc::new(AtomicBool::new(is_online_on_startup));
@@ -430,7 +440,7 @@ pub fn run() {
                     if let Some(wv) = dl_handle.get_webview("content") {
                         let query = url.query().unwrap_or("");
                         let callback = format!("{AUTH_CALLBACK_URL}?{query}&desktop_app=1");
-                        let _ = wv.eval(&format!("window.location.replace('{callback}')"));
+                        navigate_to(&wv, &callback);
                     }
                 }
             });
@@ -539,12 +549,10 @@ pub fn run() {
 
                 let Some(wv) = app_handle.get_webview("content") else { return };
                 match event.id().as_ref() {
-                    "go_home" => {
-                        let _ = wv.eval(&format!("window.location.href = '{HOME_URL}'"));
-                    }
+                    "go_home" => { navigate_to(&wv, HOME_URL); }
                     "go_back" => { let _ = wv.eval("window.history.back()"); }
                     "go_forward" => { let _ = wv.eval("window.history.forward()"); }
-                    "reload" => { let _ = wv.eval("window.location.reload()"); }
+                    "reload" => { let _ = wv.reload(); }
                     "hard_reload" => {
                         let _ = wv.eval(
                             "caches.keys().then(ks=>Promise.all(ks.map(k=>caches.delete(k)))).then(()=>window.location.reload())"
@@ -619,7 +627,7 @@ pub fn run() {
                             if is_online {
                                 reload_or_home(&wv);
                             } else {
-                                render_offline_page(&wv);
+                                navigate_to(&wv, OFFLINE_PAGE_URL);
                             }
                         }
                         connectivity_state.store(is_online, Ordering::Relaxed);
