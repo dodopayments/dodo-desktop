@@ -570,12 +570,37 @@ pub fn run() {
             };
 
             // Content webview — the remote Dodo Payments app (or local offline page).
+            //
+            // `on_navigation` intercepts every top-level navigation in the content
+            // webview. We allow navigations within app.dodopayments.com (the hosted
+            // dashboard) and the `dodo://` custom scheme (used for the offline page),
+            // and route everything else — docs, support, status, marketing links,
+            // arbitrary outbound URLs — to the user's default browser via the `open`
+            // crate. Returning `false` cancels the in-webview navigation so the user
+            // doesn't see the dashboard navigate away to an external page.
+            //
+            // Note: `target="_blank"` / `window.open()` go through a separate
+            // new-window code path inside wry and are handled by the runtime's
+            // default behavior — they're not routed here.
             window.add_child(
                 WebviewBuilder::new(
                     "content",
                     WebviewUrl::External(initial_content_url.parse()?),
                 )
-                .user_agent("DodoDesktop"),
+                .user_agent("DodoDesktop")
+                .on_navigation(|url: &tauri::Url| {
+                    let scheme = url.scheme();
+                    if scheme == "dodo" {
+                        return true;
+                    }
+                    if matches!(scheme, "https" | "http")
+                        && url.host_str() == Some("app.dodopayments.com")
+                    {
+                        return true;
+                    }
+                    let _ = open::that(url.as_str());
+                    false
+                }),
                 tauri::LogicalPosition::new(0.0, CONTENT_TOP_OFFSET),
                 tauri::LogicalSize::new(size.width, size.height - CONTENT_TOP_OFFSET),
             )?;
