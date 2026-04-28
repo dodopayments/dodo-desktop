@@ -4,9 +4,6 @@
   <a href="https://github.com/dodopayments/dodo-desktop/releases/latest">
     <img src="https://img.shields.io/github/v/release/dodopayments/dodo-desktop?label=release&color=blue" alt="Latest release" />
   </a>
-  <a href="https://github.com/dodopayments/dodo-desktop/actions/workflows/build.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/dodopayments/dodo-desktop/build.yml?label=build" alt="Build status" />
-  </a>
   <a href="https://github.com/dodopayments/dodo-desktop/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/dodopayments/dodo-desktop?color=green" alt="License" />
   </a>
