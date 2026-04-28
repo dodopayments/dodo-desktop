@@ -266,6 +266,60 @@ const OFFLINE_HTML: &str = r#"<!doctype html>
   </body>
 </html>"#;
 
+// Injected at document start in the content webview's main frame.
+//
+// We capture user clicks (capture phase, before page handlers can stopPropagation)
+// on `<a>` elements that resolve to a different host than app.dodopayments.com,
+// preventDefault, and hand the URL to Rust to open in the system browser.
+//
+// The `window.top !== window` guard is critical on Windows, where Tauri/wry
+// injects initialization scripts into every frame regardless of the
+// `for_main_frame_only` flag (see Tauri 2 docs on `initialization_script`).
+// Without this guard the interceptor would also run inside Cloudflare Turnstile,
+// Stripe checkout, and OAuth iframes — which is exactly the bug we're avoiding.
+//
+// Modifier keys (cmd/ctrl/shift/middle-click) and `download` links are passed
+// through to the page so power-user gestures still work as expected.
+const EXTERNAL_LINK_INTERCEPTOR_JS: &str = r#"
+(function () {
+  if (window.top !== window) return;
+  if (window.__dodoExternalLinkInterceptorInstalled) return;
+  window.__dodoExternalLinkInterceptorInstalled = true;
+
+  var APP_HOST = 'app.dodopayments.com';
+
+  function shouldRouteExternally(href, anchor) {
+    if (!href) return false;
+    var url;
+    try { url = new URL(href, window.location.href); } catch (e) { return false; }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    if (url.host === APP_HOST) return false;
+    if (anchor && anchor.hasAttribute('download')) return false;
+    return true;
+  }
+
+  document.addEventListener('click', function (e) {
+    if (e.defaultPrevented) return;
+    if (e.button !== 0) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+
+    var node = e.target;
+    while (node && node.nodeType === 1 && node.tagName !== 'A') node = node.parentNode;
+    if (!node || node.tagName !== 'A') return;
+
+    var href = node.href;
+    if (!shouldRouteExternally(href, node)) return;
+
+    e.preventDefault();
+    try {
+      window.__TAURI_INTERNALS__.invoke('open_external_url', { url: href });
+    } catch (err) {
+      console.error('[dodo] open_external_url invoke failed', err);
+    }
+  }, true);
+})();
+"#;
+
 fn navigate_to<R: tauri::Runtime>(webview: &Webview<R>, url: &str) {
     match url.parse() {
         Ok(parsed) => {
@@ -366,13 +420,39 @@ fn open_status_page() {
     let _ = open::that(STATUS_URL);
 }
 
+// Invoked by EXTERNAL_LINK_INTERCEPTOR_JS for off-domain link clicks.
+// Validates the scheme to refuse `file://`, `javascript:`, `data:`, etc. —
+// the renderer can attempt to invoke this with any string, so we treat the
+// argument as untrusted even though our injected script only sends http(s).
+#[tauri::command]
+fn open_external_url(url: String) {
+    let parsed = match tauri::Url::parse(&url) {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("[external-link] rejected unparseable url {url}: {e}");
+            return;
+        }
+    };
+    if !matches!(parsed.scheme(), "http" | "https") {
+        eprintln!(
+            "[external-link] rejected non-http(s) url with scheme {}",
+            parsed.scheme()
+        );
+        return;
+    }
+    if let Err(e) = open::that(parsed.as_str()) {
+        eprintln!("[external-link] failed to open {url}: {e}");
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             go_back,
             go_forward,
             retry_connection,
-            open_status_page
+            open_status_page,
+            open_external_url
         ])
         // Serve local HTML pages via the dodo:// custom scheme.
         // We use canonical `<scheme>://localhost/<path>` URLs (see OFFLINE_PAGE_URL /
@@ -571,36 +651,20 @@ pub fn run() {
 
             // Content webview — the remote Dodo Payments app (or local offline page).
             //
-            // `on_navigation` intercepts every top-level navigation in the content
-            // webview. We allow navigations within app.dodopayments.com (the hosted
-            // dashboard) and the `dodo://` custom scheme (used for the offline page),
-            // and route everything else — docs, support, status, marketing links,
-            // arbitrary outbound URLs — to the user's default browser via the `open`
-            // crate. Returning `false` cancels the in-webview navigation so the user
-            // doesn't see the dashboard navigate away to an external page.
-            //
-            // Note: `target="_blank"` / `window.open()` go through a separate
-            // new-window code path inside wry and are handled by the runtime's
-            // default behavior — they're not routed here.
+            // `EXTERNAL_LINK_INTERCEPTOR_JS` (injected at document start, main frame
+            // only) catches user clicks on off-domain `<a>` links and routes them to
+            // the system browser via the `open_external_url` command. We do NOT use
+            // `on_navigation` here: in Tauri 2 it fires for every frame including
+            // iframes, with no `is_main_frame` signal exposed, so it false-positives
+            // on Cloudflare Turnstile / Stripe / OAuth iframes that the dashboard
+            // legitimately embeds.
             window.add_child(
                 WebviewBuilder::new(
                     "content",
                     WebviewUrl::External(initial_content_url.parse()?),
                 )
                 .user_agent("DodoDesktop")
-                .on_navigation(|url: &tauri::Url| {
-                    let scheme = url.scheme();
-                    if scheme == "dodo" {
-                        return true;
-                    }
-                    if matches!(scheme, "https" | "http")
-                        && url.host_str() == Some("app.dodopayments.com")
-                    {
-                        return true;
-                    }
-                    let _ = open::that(url.as_str());
-                    false
-                }),
+                .initialization_script(EXTERNAL_LINK_INTERCEPTOR_JS),
                 tauri::LogicalPosition::new(0.0, CONTENT_TOP_OFFSET),
                 tauri::LogicalSize::new(size.width, size.height - CONTENT_TOP_OFFSET),
             )?;
