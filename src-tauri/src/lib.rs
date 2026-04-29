@@ -298,6 +298,20 @@ const EXTERNAL_LINK_INTERCEPTOR_JS: &str = r#"
     return true;
   }
 
+  var _origOpen = window.open;
+  window.open = function (url, target, features) {
+    if (url && shouldRouteExternally(url, null)) {
+      try {
+        var resolved = new URL(url, window.location.href).href;
+        window.__TAURI_INTERNALS__.invoke('open_external_url', { url: resolved });
+      } catch (err) {
+        console.error('[dodo] open_external_url invoke failed', err);
+      }
+      return null;
+    }
+    return _origOpen.call(this, url, target, features);
+  };
+
   document.addEventListener('click', function (e) {
     if (e.defaultPrevented) return;
     if (e.button !== 0) return;
