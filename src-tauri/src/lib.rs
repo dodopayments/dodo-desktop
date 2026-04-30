@@ -334,6 +334,19 @@ const EXTERNAL_LINK_INTERCEPTOR_JS: &str = r#"
 })();
 "#;
 
+// Compute the toolbar's x-offset. On macOS the toolbar normally clears the
+// 76px traffic-light strip, but those buttons are hidden in fullscreen mode —
+// so we shift the toolbar to x=0 to fill the gap. See issue #16.
+fn effective_toolbar_offset_x<R: tauri::Runtime>(
+    #[allow(unused_variables)] window: &tauri::Window<R>,
+) -> f64 {
+    #[cfg(target_os = "macos")]
+    if window.is_fullscreen().unwrap_or(false) {
+        return 0.0;
+    }
+    TOOLBAR_OFFSET_X
+}
+
 fn navigate_to<R: tauri::Runtime>(webview: &Webview<R>, url: &str) {
     match url.parse() {
         Ok(parsed) => {
@@ -558,14 +571,17 @@ pub fn run() {
             // Windows: replaces the removed native titlebar (back/fwd + min/max/close).
             // Linux: skipped — wry child-webview placement is broken on Wayland.
             #[cfg(not(target_os = "linux"))]
-            window.add_child(
-                WebviewBuilder::new(
-                    "toolbar",
-                    WebviewUrl::External(TOOLBAR_PAGE_URL.parse()?),
-                ),
-                tauri::LogicalPosition::new(TOOLBAR_OFFSET_X, 0.0),
-                tauri::LogicalSize::new(size.width - TOOLBAR_OFFSET_X, TOOLBAR_HEIGHT),
-            )?;
+            {
+                let toolbar_x = effective_toolbar_offset_x(&window);
+                window.add_child(
+                    WebviewBuilder::new(
+                        "toolbar",
+                        WebviewUrl::External(TOOLBAR_PAGE_URL.parse()?),
+                    ),
+                    tauri::LogicalPosition::new(toolbar_x, 0.0),
+                    tauri::LogicalSize::new(size.width - toolbar_x, TOOLBAR_HEIGHT),
+                )?;
+            }
 
             // Linux: install a GtkHeaderBar as the window titlebar with native
             // back/forward buttons. set_titlebar() switches GTK to CSD mode and
@@ -922,13 +938,17 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Keep toolbar and content webviews stacked on resize
+            // Keep toolbar and content webviews stacked on resize.
+            // Resized also fires on macOS fullscreen transitions, which is how
+            // we re-flow the toolbar past the (now-hidden) traffic lights.
             if let tauri::WindowEvent::Resized(physical_size) = event {
                 if let Ok(scale) = window.scale_factor() {
                     let size = physical_size.to_logical::<f64>(scale);
+                    let toolbar_x = effective_toolbar_offset_x(window);
                     if let Some(tb) = window.get_webview("toolbar") {
+                        let _ = tb.set_position(tauri::LogicalPosition::new(toolbar_x, 0.0));
                         let _ = tb.set_size(tauri::LogicalSize::new(
-                            size.width - TOOLBAR_OFFSET_X,
+                            size.width - toolbar_x,
                             TOOLBAR_HEIGHT,
                         ));
                     }
