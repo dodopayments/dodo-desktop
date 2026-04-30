@@ -15,8 +15,10 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::WebviewBuilder,
     window::WindowBuilder,
-    ActivationPolicy, AppHandle, Manager, Webview, WebviewUrl,
+    AppHandle, Manager, Webview, WebviewUrl,
 };
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tokio::sync::Mutex as TokioMutex;
