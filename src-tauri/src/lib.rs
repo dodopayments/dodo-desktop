@@ -667,6 +667,9 @@ pub fn run() {
                         if let Some(window) = app_handle.get_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
+
+                            #[cfg(target_os = "macos")]
+                            set_activation_policy(app_handle, ActivationPolicy::Regular);
                         }
                     }
                 })
@@ -723,8 +726,7 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let _ = window.hide();
                 api.prevent_close();
-                
-                #[cfg(target_os = "macos")]
+
                 set_activation_policy(window.app_handle(), ActivationPolicy::Accessory);
             }
         })
