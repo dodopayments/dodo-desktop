@@ -296,6 +296,9 @@ const EXTERNAL_LINK_INTERCEPTOR_JS: &str = r#"
     try { url = new URL(href, window.location.href); } catch (e) { return false; }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
     if (url.host === APP_HOST) return false;
+    // OAuth authorize links are opened by the app (openNativeOAuth) with PKCE +
+    // the desktop redirect scheme
+    if (url.pathname.endsWith('/protocol/openid-connect/auth')) return false;
     if (anchor && anchor.hasAttribute('download')) return false;
     return true;
   }
@@ -734,7 +737,15 @@ pub fn run() {
                 if let Some(url) = event.urls().first() {
                     if let Some(wv) = dl_handle.get_webview("content") {
                         let query = url.query().unwrap_or("");
-                        let callback = format!("{AUTH_CALLBACK_URL}?{query}&desktop_app=1");
+                        let flow = url.host_str().unwrap_or("");
+                        let provider = url.path().trim_start_matches('/');
+                        let callback = if matches!(flow, "login" | "signup")
+                            && matches!(provider, "google" | "github")
+                        {
+                            format!("{HOME_URL}/{flow}/{provider}?{query}&desktop_app=1")
+                        } else {
+                            format!("{AUTH_CALLBACK_URL}?{query}&desktop_app=1")
+                        };
                         navigate_to(&wv, &callback);
                     }
                 }
