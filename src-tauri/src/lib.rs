@@ -288,6 +288,9 @@ const EXTERNAL_LINK_INTERCEPTOR_JS: &str = r#"
   if (window.__dodoExternalLinkInterceptorInstalled) return;
   window.__dodoExternalLinkInterceptorInstalled = true;
 
+  // Advertise social-login support to the frontend.
+  window.__DODO_SOCIAL_LOGIN__ = true;
+
   var APP_HOST = 'app.dodopayments.com';
 
   function shouldRouteExternally(href, anchor) {
