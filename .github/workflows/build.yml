@@ -78,15 +78,28 @@ jobs:
           echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> $GITHUB_ENV
 
       - name: Azure login (OIDC) for Artifact Signing
+        id: azure_login
         if: runner.os == 'Windows' && vars.AZURE_CLIENT_ID != ''
+        continue-on-error: true
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      # Signing unavailable (creds unset, subscription/RBAC missing, or service
+      # down): strip signCommand so Tauri still produces UNSIGNED installers
+      # instead of failing the release. Signing resumes when Azure login works.
+      - name: Disable Windows signing when unavailable
+        if: runner.os == 'Windows' && steps.azure_login.outcome != 'success'
+        shell: bash
+        run: |
+          echo "::warning::Azure signing unavailable (login outcome: ${{ steps.azure_login.outcome }}). Building UNSIGNED Windows installers."
+          jq 'del(.bundle.windows.signCommand)' src-tauri/tauri.conf.json > tauri.conf.tmp.json
+          mv tauri.conf.tmp.json src-tauri/tauri.conf.json
+
       - name: Install trusted-signing-cli
-        if: runner.os == 'Windows' && vars.AZURE_CLIENT_ID != ''
+        if: runner.os == 'Windows' && steps.azure_login.outcome == 'success'
         run: cargo install trusted-signing-cli --locked
 
       - name: Build Tauri app
