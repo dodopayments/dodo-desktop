@@ -497,9 +497,26 @@ const MODE_SWITCH_SPINNER_JS: &str = r#"
     return false;
   }
 
+  function isSpinnerMutation(m) {
+    var n = m.target;
+    return n && n.nodeType === 1 && n.id === SPINNER_ID;
+  }
+
   var observer = new MutationObserver(function (mutations) {
-    // While the spinner is up, any mutation may mean the overlay moved or
-    // went away; when it's down, only wake up if the overlay text appeared.
+    // Ignore mutations we caused ourselves by styling the spinner —
+    // otherwise each showSpinner() style write would re-fire the observer
+    // and schedule another sync, one full cycle per animation frame.
+    var external = false;
+    for (var i = 0; i < mutations.length; i++) {
+      if (!isSpinnerMutation(mutations[i])) {
+        external = true;
+        break;
+      }
+    }
+    if (!external) return;
+    // While the spinner is up, any external mutation may mean the overlay
+    // moved or went away; when it's down, only wake up if the overlay text
+    // appeared.
     if (target || mutationsHintAtOverlay(mutations)) scheduleSync();
   });
 
