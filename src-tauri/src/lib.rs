@@ -347,6 +347,198 @@ const EXTERNAL_LINK_INTERCEPTOR_JS: &str = r#"
 })();
 "#;
 
+// Injected at document start in the content webview's main frame.
+//
+// The dashboard's Test Mode ⇄ Live Mode transition renders a full-screen
+// overlay containing only static text ("Switching to Test Mode" /
+// "Switching to Live Mode"), which makes the app feel frozen while the
+// switch is in flight (issue #17). The frontend is served remotely from
+// app.dodopayments.com, so the desktop shell can't change that markup —
+// instead we watch for the overlay text and float a small CSS spinner
+// above it for the duration of the transition.
+//
+// Implementation notes:
+//   * The spinner lives in an element we own, appended to <body> and
+//     positioned with `position: fixed` — we never insert nodes into the
+//     React-managed tree, which could break reconciliation.
+//   * The MutationObserver only falls through to a full DOM scan when a
+//     mutation's text hints at the overlay ("Switching to"), so the
+//     observer stays cheap during normal dashboard use.
+//   * Spinner color is copied from the overlay text's computed color, so
+//     it tracks the web app's light/dark themes without hardcoding either.
+//   * Same `window.top !== window` guard as the link interceptor: wry on
+//     Windows injects init scripts into every frame, and this must not run
+//     inside Stripe/Turnstile/OAuth iframes.
+const MODE_SWITCH_SPINNER_JS: &str = r#"
+(function () {
+  if (window.top !== window) return;
+  if (window.__dodoModeSwitchSpinnerInstalled) return;
+  window.__dodoModeSwitchSpinnerInstalled = true;
+
+  var MODE_SWITCH_RE = /^Switching to (Test|Live) Mode/i;
+  var TEXT_HINT = 'Switching to';
+  var SPINNER_ID = '__dodo-mode-switch-spinner';
+  var STYLE_ID = '__dodo-mode-switch-spinner-style';
+  var SPINNER_SIZE = 28;
+  var target = null;
+  var scheduled = false;
+
+  function ensureStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    var style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent =
+      '@keyframes __dodo-mode-spin { to { transform: rotate(360deg); } }' +
+      '#' + SPINNER_ID + ' {' +
+      '  position: fixed;' +
+      '  width: ' + SPINNER_SIZE + 'px;' +
+      '  height: ' + SPINNER_SIZE + 'px;' +
+      '  border-radius: 50%;' +
+      '  border: 3px solid currentColor;' +
+      '  border-top-color: transparent;' +
+      '  animation: __dodo-mode-spin 0.8s linear infinite;' +
+      '  pointer-events: none;' +
+      '  z-index: 2147483647;' +
+      '}';
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  // The overlay text is a visible leaf element (no element children) whose
+  // own text starts with the transition message. The visibility check
+  // (`getClientRects`) matters when the overlay is toggled with CSS instead
+  // of being unmounted: hidden text must not keep the spinner alive.
+  function matchesOverlayText(el) {
+    return (
+      el.nodeType === 1 &&
+      el.childElementCount === 0 &&
+      el.id !== SPINNER_ID &&
+      MODE_SWITCH_RE.test((el.textContent || '').trim()) &&
+      el.getClientRects().length > 0
+    );
+  }
+
+  function findTarget() {
+    if (!document.body) return null;
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    var el;
+    while ((el = walker.nextNode())) {
+      if (matchesOverlayText(el)) return el;
+    }
+    return null;
+  }
+
+  function showSpinner(el) {
+    ensureStyle();
+    var spinner = document.getElementById(SPINNER_ID);
+    if (!spinner) {
+      spinner = document.createElement('div');
+      spinner.id = SPINNER_ID;
+      spinner.setAttribute('role', 'progressbar');
+      spinner.setAttribute('aria-label', 'Mode switch in progress');
+      document.body.appendChild(spinner);
+    }
+    var rect = el.getBoundingClientRect();
+    var left, top;
+    if (rect.width > 0 && rect.height > 0) {
+      left = rect.left + rect.width / 2 - SPINNER_SIZE / 2;
+      top = rect.top - SPINNER_SIZE - 16;
+      // If the text sits near the top edge, drop the spinner below it
+      // instead of pushing it off-screen.
+      if (top < 8) top = rect.bottom + 16;
+    } else {
+      left = window.innerWidth / 2 - SPINNER_SIZE / 2;
+      top = window.innerHeight / 2 - SPINNER_SIZE * 2;
+    }
+    spinner.style.left = left + 'px';
+    spinner.style.top = top + 'px';
+    spinner.style.borderColor = getComputedStyle(el).color;
+    spinner.style.borderTopColor = 'transparent';
+  }
+
+  function removeSpinner() {
+    var spinner = document.getElementById(SPINNER_ID);
+    if (spinner) spinner.remove();
+  }
+
+  function sync() {
+    if (target && (!target.isConnected || !matchesOverlayText(target))) {
+      target = null;
+    }
+    if (!target) target = findTarget();
+    if (target) {
+      showSpinner(target);
+    } else {
+      removeSpinner();
+    }
+  }
+
+  function scheduleSync() {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(function () {
+      scheduled = false;
+      sync();
+    });
+  }
+
+  function mutationsHintAtOverlay(mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      var m = mutations[i];
+      if (m.type === 'childList') {
+        for (var j = 0; j < m.addedNodes.length; j++) {
+          if ((m.addedNodes[j].textContent || '').indexOf(TEXT_HINT) !== -1) return true;
+        }
+      } else if ((m.target.textContent || '').indexOf(TEXT_HINT) !== -1) {
+        // characterData: text swapped in place; attributes: a CSS-hidden
+        // overlay may have just been revealed via class/style/hidden.
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isSpinnerMutation(m) {
+    var n = m.target;
+    return n && n.nodeType === 1 && n.id === SPINNER_ID;
+  }
+
+  var observer = new MutationObserver(function (mutations) {
+    // Ignore mutations we caused ourselves by styling the spinner —
+    // otherwise each showSpinner() style write would re-fire the observer
+    // and schedule another sync, one full cycle per animation frame.
+    var external = false;
+    for (var i = 0; i < mutations.length; i++) {
+      if (!isSpinnerMutation(mutations[i])) {
+        external = true;
+        break;
+      }
+    }
+    if (!external) return;
+    // While the spinner is up, any external mutation may mean the overlay
+    // moved or went away; when it's down, only wake up if the overlay text
+    // appeared.
+    if (target || mutationsHintAtOverlay(mutations)) scheduleSync();
+  });
+
+  function start() {
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'hidden']
+    });
+    sync();
+  }
+
+  if (document.body) {
+    start();
+  } else {
+    document.addEventListener('DOMContentLoaded', start);
+  }
+})();
+"#;
+
 // Compute the toolbar's x-offset. On macOS the toolbar normally clears the
 // 76px traffic-light strip, but those buttons are hidden in fullscreen mode —
 // so we shift the toolbar to x=0 to fill the gap. See issue #16.
@@ -718,7 +910,8 @@ pub fn run() {
                     WebviewUrl::External(initial_content_url.parse()?),
                 )
                 .user_agent("DodoDesktop")
-                .initialization_script(EXTERNAL_LINK_INTERCEPTOR_JS),
+                .initialization_script(EXTERNAL_LINK_INTERCEPTOR_JS)
+                .initialization_script(MODE_SWITCH_SPINNER_JS),
                 tauri::LogicalPosition::new(0.0, CONTENT_TOP_OFFSET),
                 tauri::LogicalSize::new(size.width, size.height - CONTENT_TOP_OFFSET),
             )?;
